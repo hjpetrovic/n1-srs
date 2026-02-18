@@ -157,28 +157,28 @@ if ('serviceWorker' in navigator) {
 
 // ===== FIREBASE CONFIGURATION =====
 // Replace this with your Firebase project config (see SETUP.md)
-const firebaseConfig = {
-  apiKey: "AIzaSyBuINCUGvBPq2H1-iRISKrDHKgmQHlRHOs",
-  authDomain: "n1-srs.firebaseapp.com",
-  projectId: "n1-srs",
-  storageBucket: "n1-srs.firebasestorage.app",
-  messagingSenderId: "222619748465",
-  appId: "1:222619748465:web:431b15256693f75f9f33d0"
+window.FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 // Initialize Firebase (only if configured)
-let firebaseApp = null;
-let db = null;
-let auth = null;
-const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+window.firebaseApp = null;
+window.db = null;
+window.auth = null;
+window.FIREBASE_CONFIGURED = window.FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
 
-if (FIREBASE_CONFIGURED) {
+if (window.FIREBASE_CONFIGURED) {
   try {
-    firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.firestore();
-    auth = firebase.auth();
+    window.firebaseApp = firebase.initializeApp(window.FIREBASE_CONFIG);
+    window.db = firebase.firestore();
+    window.auth = firebase.auth();
     // Enable offline persistence
-    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    window.db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
   } catch (e) {
     console.warn('Firebase init failed:', e);
   }
@@ -189,6 +189,12 @@ const N1_DATA = {"questions":[{"id":1,"sentence":"自分の失敗を、謙虚に
 </script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+// Access globals from non-babel script block
+const FIREBASE_CONFIG = window.FIREBASE_CONFIG;
+const FIREBASE_CONFIGURED = window.FIREBASE_CONFIGURED;
+const db = window.db;
+const auth = window.auth;
 
 // SM-2 Algorithm
 function sm2(card, quality) {
