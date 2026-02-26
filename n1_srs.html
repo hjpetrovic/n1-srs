@@ -420,6 +420,7 @@ function App() {
   const [batchSize, setBatchSize] = useState(20);
   const [activeTypes, setActiveTypes] = useState(new Set(['kanji_reading', 'vocabulary', 'mixed']));
   const [lastReviewSnapshot, setLastReviewSnapshot] = useState(null);
+  const [requeuedIds, setRequeuedIds] = useState(new Set());
 
   // Check auth state on mount
   useEffect(() => {
@@ -468,27 +469,29 @@ function App() {
   const grammarList = N1_DATA.grammar;
   const now = Date.now();
 
-  const dueCards = useMemo(() => questions.filter(q => {
+  // reviewDue = cards already studied whose nextReview date has passed (genuine overdue)
+  // newCards  = cards never studied yet
+  // Sessions fill with reviewDue first, then top up with newCards
+  const reviewDue = useMemo(() => questions.filter(q => {
     if (!activeTypes.has(q.type)) return false;
     const p = progress[`q_${q.id}`];
-    if (!p) return true;
-    return p.nextReview <= now;
+    return p && p.nextReview <= now;
   }), [progress, activeTypes]);
 
   const newCards = useMemo(() => questions.filter(q => activeTypes.has(q.type) && !progress[`q_${q.id}`]), [progress, activeTypes]);
   const studiedCount = Object.keys(progress).filter(k => k.startsWith('q_')).length;
 
-  const dueVocab = useMemo(() => vocabulary.filter(v => {
+  const vocabReviewDue = useMemo(() => vocabulary.filter(v => {
     const p = progress[`v_${v.word}`];
-    if (!p) return true;
-    return p.nextReview <= now;
+    return p && p.nextReview <= now;
   }), [progress]);
+  const newVocab = useMemo(() => vocabulary.filter(v => !progress[`v_${v.word}`]), [progress]);
 
-  const dueGrammar = useMemo(() => grammarList.filter(g => {
+  const grammarReviewDue = useMemo(() => grammarList.filter(g => {
     const p = progress[`g_${g.id}`];
-    if (!p) return true;
-    return p.nextReview <= now;
+    return p && p.nextReview <= now;
   }), [progress]);
+  const newGrammar = useMemo(() => grammarList.filter(g => !progress[`g_${g.id}`]), [progress]);
   const accuracy = stats.totalReviews > 0 ? Math.round(stats.correctCount / stats.totalReviews * 100) : 0;
 
   // Update streak
@@ -521,12 +524,20 @@ function App() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [view, selected, currentIdx, sessionCards, flipped]);
 
+  function buildSessionPool(reviews, newC) {
+    // Always clear overdue reviews first; fill remaining slots with new cards
+    const reviewSlice = reviews.slice(0, batchSize);
+    const newSlice = newC.slice(0, batchSize - reviewSlice.length);
+    const pool = [...reviewSlice, ...newSlice];
+    return pool.length ? pool : newC.slice(0, batchSize);
+  }
+
   function startQuiz(mode) {
-    let pool = mode === 'new' ? newCards : dueCards.length > 0 ? dueCards : newCards;
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, batchSize);
+    const pool = mode === 'new' ? newCards.slice(0, batchSize) : buildSessionPool(reviewDue, newCards);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
     if (!shuffled.length) return;
     setSessionCards(shuffled); setCurrentIdx(0); setSelected(null);
-    setSessionStats({ correct: 0, total: 0 }); setView('quiz');
+    setSessionStats({ correct: 0, total: 0 }); setRequeuedIds(new Set()); setView('quiz');
   }
 
   function handleAnswer(idx) {
@@ -543,6 +554,11 @@ function App() {
     ns = addTypeStats(ns, card.type, isCorrect);
     updateStats(ns);
     setSessionStats(s => ({ correct: s.correct + (isCorrect ? 1 : 0), total: s.total + 1 }));
+    // Re-queue failed cards once at end of session so they're consolidated before tomorrow
+    if (!isCorrect && !requeuedIds.has(card.id)) {
+      setSessionCards(cards => [...cards, card]);
+      setRequeuedIds(ids => new Set([...ids, card.id]));
+    }
   }
 
   function nextCard() {
@@ -552,8 +568,9 @@ function App() {
   }
 
   function startVocab() {
-    const pool = dueVocab.length > 0 ? dueVocab : vocabulary;
-    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, batchSize);
+    const pool = buildSessionPool(vocabReviewDue, newVocab);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    if (!shuffled.length) return;
     setSessionCards(shuffled); setCurrentIdx(0); setFlipped(false);
     setSessionStats({ correct: 0, total: 0 }); setView('vocab');
   }
@@ -575,9 +592,11 @@ function App() {
   }
 
   function startGrammar() {
-    const pool = dueGrammar.length > 0 ? dueGrammar : grammarList;
-    setSessionCards([...pool].sort(() => Math.random() - 0.5));
-    setCurrentIdx(0); setFlipped(false); setSessionStats({ correct: 0, total: 0 }); setView('grammar');
+    const pool = buildSessionPool(grammarReviewDue, newGrammar);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    if (!shuffled.length) return;
+    setSessionCards(shuffled); setCurrentIdx(0); setFlipped(false);
+    setSessionStats({ correct: 0, total: 0 }); setView('grammar');
   }
 
   function handleGrammarRating(q) {
@@ -676,15 +695,15 @@ function App() {
 
       <div className="nav">
         <button className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} onClick={() => setView('dashboard')}>Dashboard</button>
-        <button className={`nav-btn ${view === 'quiz' ? 'active' : ''}`} onClick={() => startQuiz('due')}>Study Due ({dueCards.length})</button>
+        <button className={`nav-btn ${view === 'quiz' ? 'active' : ''}`} onClick={() => startQuiz('due')}>Study Due ({reviewDue.length})</button>
         <button className="nav-btn" onClick={() => startQuiz('new')}>New Cards</button>
-        <button className={`nav-btn ${view === 'vocab' ? 'active' : ''}`} onClick={startVocab}>Vocab ({dueVocab.length})</button>
-        <button className={`nav-btn ${view === 'grammar' ? 'active' : ''}`} onClick={startGrammar}>Grammar ({dueGrammar.length})</button>
+        <button className={`nav-btn ${view === 'vocab' ? 'active' : ''}`} onClick={startVocab}>Vocab ({vocabReviewDue.length})</button>
+        <button className={`nav-btn ${view === 'grammar' ? 'active' : ''}`} onClick={startGrammar}>Grammar ({grammarReviewDue.length})</button>
       </div>
 
       {view === 'dashboard' && (<>
         <div className="dashboard">
-          <div className="stat-card"><h3>Due Now</h3><div className="num num-pink">{dueCards.length}</div><div className="sub">cards to review</div></div>
+          <div className="stat-card"><h3>Due Now</h3><div className="num num-pink">{reviewDue.length}</div><div className="sub">cards to review</div></div>
           <div className="stat-card"><h3>New</h3><div className="num num-purple">{newCards.length}</div><div className="sub">unseen cards</div></div>
           <div className="stat-card"><h3>Studied</h3><div className="num num-green">{studiedCount}</div><div className="sub">of {questions.length}</div>
             <div className="progress-bar"><div className="progress-fill green" style={{width:`${(studiedCount/questions.length)*100}%`}}></div></div>
