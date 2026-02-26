@@ -220,7 +220,7 @@ function sm2(card, quality) {
 
 function useDataStore(user) {
   const [progress, setProgress] = useState({});
-  const [stats, setStats] = useState({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0 });
+  const [stats, setStats] = useState({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} });
   const [loaded, setLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const saveTimer = useRef(null);
@@ -241,9 +241,9 @@ function useDataStore(user) {
         else setProgress({});
         if (sSnap.exists) {
           const s = sSnap.data();
-          setStats({ totalReviews: s.totalReviews || 0, streak: s.streak || 0, lastStudyDate: s.lastStudyDate || null, correctCount: s.correctCount || 0 });
+          setStats({ totalReviews: s.totalReviews || 0, streak: s.streak || 0, lastStudyDate: s.lastStudyDate || null, correctCount: s.correctCount || 0, byType: s.byType || {} });
         } else {
-          setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0 });
+          setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} });
         }
         setLoaded(true);
         // Update profile
@@ -262,7 +262,7 @@ function useDataStore(user) {
       try {
         const s = JSON.parse(localStorage.getItem('n1_stats_v2') || '{}');
         setStats({ totalReviews: s.totalReviews || 0, streak: s.streak || 0, lastStudyDate: s.lastStudyDate || null, correctCount: s.correctCount || 0 });
-      } catch { setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0 }); }
+      } catch { setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} }); }
       setLoaded(true);
     }
   }, [user]);
@@ -308,7 +308,7 @@ function useDataStore(user) {
 
   function resetAll() {
     setProgress({});
-    setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0 });
+    setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} });
     if (user && db) {
       const uid = user.uid;
       db.collection('users').doc(uid).collection('data').doc('progress').delete();
@@ -419,6 +419,7 @@ function App() {
   const [sessionStats, setSessionStats] = useState({ correct: 0, total: 0 });
   const [batchSize, setBatchSize] = useState(20);
   const [activeTypes, setActiveTypes] = useState(new Set(['kanji_reading', 'vocabulary', 'mixed']));
+  const [lastReviewSnapshot, setLastReviewSnapshot] = useState(null);
 
   // Check auth state on mount
   useEffect(() => {
@@ -476,6 +477,18 @@ function App() {
 
   const newCards = useMemo(() => questions.filter(q => activeTypes.has(q.type) && !progress[`q_${q.id}`]), [progress, activeTypes]);
   const studiedCount = Object.keys(progress).filter(k => k.startsWith('q_')).length;
+
+  const dueVocab = useMemo(() => vocabulary.filter(v => {
+    const p = progress[`v_${v.word}`];
+    if (!p) return true;
+    return p.nextReview <= now;
+  }), [progress]);
+
+  const dueGrammar = useMemo(() => grammarList.filter(g => {
+    const p = progress[`g_${g.id}`];
+    if (!p) return true;
+    return p.nextReview <= now;
+  }), [progress]);
   const accuracy = stats.totalReviews > 0 ? Math.round(stats.correctCount / stats.totalReviews * 100) : 0;
 
   // Update streak
@@ -500,7 +513,8 @@ function App() {
         if (e.key === ' ') { e.preventDefault(); setFlipped(f => !f); }
         else if (flipped && '1234'.includes(e.key)) handleVocabRating(+e.key - 1);
       } else if (view === 'grammar') {
-        if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); nextGrammarCard(); }
+        if (!flipped && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); setFlipped(true); }
+        else if (flipped && '1234'.includes(e.key)) handleGrammarRating(+e.key - 1);
       }
     }
     window.addEventListener('keydown', handleKey);
@@ -521,21 +535,25 @@ function App() {
     const card = sessionCards[currentIdx];
     const isCorrect = idx === card.correct;
     const key = `q_${card.id}`;
+    setLastReviewSnapshot({ key, prevProgress: progress[key], prevStats: stats, prevSessionStats: sessionStats });
     const updated = sm2(progress[key] || {}, isCorrect ? 2 : 0);
     const np = { ...progress, [key]: updated };
     updateProgress(np);
-    const ns = { ...stats, totalReviews: stats.totalReviews + 1, correctCount: stats.correctCount + (isCorrect ? 1 : 0) };
+    let ns = { ...stats, totalReviews: stats.totalReviews + 1, correctCount: stats.correctCount + (isCorrect ? 1 : 0) };
+    ns = addTypeStats(ns, card.type, isCorrect);
     updateStats(ns);
     setSessionStats(s => ({ correct: s.correct + (isCorrect ? 1 : 0), total: s.total + 1 }));
   }
 
   function nextCard() {
+    setLastReviewSnapshot(null);
     if (currentIdx + 1 >= sessionCards.length) setView('session_complete');
     else { setCurrentIdx(i => i + 1); setSelected(null); }
   }
 
   function startVocab() {
-    const shuffled = [...vocabulary].sort(() => Math.random() - 0.5).slice(0, batchSize);
+    const pool = dueVocab.length > 0 ? dueVocab : vocabulary;
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, batchSize);
     setSessionCards(shuffled); setCurrentIdx(0); setFlipped(false);
     setSessionStats({ correct: 0, total: 0 }); setView('vocab');
   }
@@ -547,26 +565,58 @@ function App() {
     const updated = sm2(progress[key] || {}, q);
     const np = { ...progress, [key]: updated };
     updateProgress(np);
-    const ns = { ...stats, totalReviews: stats.totalReviews + 1 };
+    const isCorrect = q >= 2;
+    let ns = { ...stats, totalReviews: stats.totalReviews + 1, correctCount: stats.correctCount + (isCorrect ? 1 : 0) };
+    ns = addTypeStats(ns, 'vocab', isCorrect);
     updateStats(ns);
+    setSessionStats(s => ({ correct: s.correct + (isCorrect ? 1 : 0), total: s.total + 1 }));
     if (currentIdx + 1 >= sessionCards.length) setView('session_complete');
     else { setCurrentIdx(i => i + 1); setFlipped(false); }
   }
 
   function startGrammar() {
-    setSessionCards([...grammarList].sort(() => Math.random() - 0.5));
-    setCurrentIdx(0); setView('grammar');
+    const pool = dueGrammar.length > 0 ? dueGrammar : grammarList;
+    setSessionCards([...pool].sort(() => Math.random() - 0.5));
+    setCurrentIdx(0); setFlipped(false); setSessionStats({ correct: 0, total: 0 }); setView('grammar');
   }
 
-  function nextGrammarCard() {
-    if (currentIdx + 1 >= sessionCards.length) setView('dashboard');
-    else setCurrentIdx(i => i + 1);
+  function handleGrammarRating(q) {
+    const card = sessionCards[currentIdx];
+    const key = `g_${card.id}`;
+    const updated = sm2(progress[key] || {}, q);
+    const np = { ...progress, [key]: updated };
+    updateProgress(np);
+    const isCorrect = q >= 2;
+    let ns = { ...stats, totalReviews: stats.totalReviews + 1, correctCount: stats.correctCount + (isCorrect ? 1 : 0) };
+    ns = addTypeStats(ns, 'grammar_pattern', isCorrect);
+    updateStats(ns);
+    setSessionStats(s => ({ correct: s.correct + (isCorrect ? 1 : 0), total: s.total + 1 }));
+    if (currentIdx + 1 >= sessionCards.length) setView('session_complete');
+    else { setCurrentIdx(i => i + 1); setFlipped(false); }
   }
 
   function resetProgress() {
     if (confirm('Reset all progress? This cannot be undone.')) {
       resetAll();
     }
+  }
+
+  function addTypeStats(ns, type, isCorrect) {
+    const prev = (ns.byType || {})[type] || { reviews: 0, correct: 0 };
+    return { ...ns, byType: { ...(ns.byType || {}), [type]: { reviews: prev.reviews + 1, correct: prev.correct + (isCorrect ? 1 : 0) } } };
+  }
+
+  function undoReview() {
+    if (!lastReviewSnapshot) return;
+    const { key, prevProgress, prevStats, prevSessionStats } = lastReviewSnapshot;
+    const np = { ...progress };
+    if (prevProgress === undefined) delete np[key];
+    else np[key] = prevProgress;
+    updateProgress(np);
+    updateStats(prevStats);
+    setSessionStats(prevSessionStats);
+    setSelected(null);
+    setLastReviewSnapshot(null);
   }
 
   // Show loading while checking auth or loading data
@@ -628,8 +678,8 @@ function App() {
         <button className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} onClick={() => setView('dashboard')}>Dashboard</button>
         <button className={`nav-btn ${view === 'quiz' ? 'active' : ''}`} onClick={() => startQuiz('due')}>Study Due ({dueCards.length})</button>
         <button className="nav-btn" onClick={() => startQuiz('new')}>New Cards</button>
-        <button className={`nav-btn ${view === 'vocab' ? 'active' : ''}`} onClick={startVocab}>Vocab</button>
-        <button className={`nav-btn ${view === 'grammar' ? 'active' : ''}`} onClick={startGrammar}>Grammar</button>
+        <button className={`nav-btn ${view === 'vocab' ? 'active' : ''}`} onClick={startVocab}>Vocab ({dueVocab.length})</button>
+        <button className={`nav-btn ${view === 'grammar' ? 'active' : ''}`} onClick={startGrammar}>Grammar ({dueGrammar.length})</button>
       </div>
 
       {view === 'dashboard' && (<>
@@ -662,6 +712,30 @@ function App() {
             </span>
           </label>
         </div>
+
+        {Object.keys(stats.byType || {}).length > 0 && (
+          <div className="card">
+            <h3 style={{marginBottom:16,color:'#94a3b8'}}>Accuracy by Type</h3>
+            {[
+              ['kanji_reading','漢字読み'],['vocabulary','文脈'],['synonym','類義語'],
+              ['usage','用法'],['grammar','文法 (Q)'],['mixed','総合'],
+              ['vocab','Vocabulary'],['grammar_pattern','Grammar']
+            ].filter(([k]) => stats.byType[k]).map(([key, label]) => {
+              const d = stats.byType[key];
+              const acc = d.reviews > 0 ? Math.round(d.correct / d.reviews * 100) : 0;
+              const color = acc >= 80 ? 'linear-gradient(90deg,#16a34a,#4ade80)' : acc >= 60 ? 'linear-gradient(90deg,#d97706,#fbbf24)' : 'linear-gradient(90deg,#dc2626,#f87171)';
+              return (
+                <div key={key} style={{marginBottom:12}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                    <span style={{color:'#cbd5e1',fontSize:'0.9rem'}}>{label}</span>
+                    <span style={{color:'#94a3b8',fontSize:'0.85rem'}}>{acc}% <span style={{color:'#475569'}}>({d.reviews} reviews)</span></span>
+                  </div>
+                  <div className="progress-bar"><div className="progress-fill" style={{width:`${acc}%`,background:color}}></div></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="card">
           <h3 style={{marginBottom:12,color:'#94a3b8'}}>Content</h3>
@@ -710,6 +784,11 @@ function App() {
               <button className="continue-btn" onClick={nextCard}>
                 {currentIdx + 1 >= sessionCards.length ? 'Finish' : 'Next'} &rarr;
               </button>
+              {lastReviewSnapshot && (
+                <button onClick={undoReview} style={{marginLeft:8,padding:'10px 20px',border:'1px solid #334155',background:'transparent',color:'#94a3b8',borderRadius:8,cursor:'pointer',fontSize:'0.9rem',fontWeight:600}}>
+                  ↩ Undo
+                </button>
+              )}
               <div className="keyboard-hint"><kbd>Space</kbd> or <kbd>Enter</kbd></div>
             </div>
           )}
@@ -746,23 +825,33 @@ function App() {
         const card = sessionCards[currentIdx];
         return (<>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
-            <span className="card-type">Grammar #{card.id}</span>
+            <span className="card-type">Grammar</span>
             <span style={{color:'#64748b',fontSize:'0.85rem'}}>{currentIdx + 1}/{sessionCards.length}</span>
           </div>
-          <div className="grammar-card">
+          <div className="progress-bar"><div className="progress-fill purple" style={{width:`${(currentIdx/sessionCards.length)*100}%`}}></div></div>
+          <div className="grammar-card" style={{cursor: flipped ? 'default' : 'pointer'}} onClick={() => !flipped && setFlipped(true)}>
             <div className="grammar-pattern">{card.pattern}</div>
-            <div className="grammar-meaning">{card.meaning}</div>
-            {card.connection && <div className="grammar-connection">{card.connection}</div>}
-            {card.examples.length > 0 && (
-              <ul className="grammar-examples">{card.examples.map((ex, i) => <li key={i}>{ex}</li>)}</ul>
+            {flipped ? (<>
+              <div className="grammar-meaning">{card.meaning}</div>
+              {card.connection && <div className="grammar-connection">{card.connection}</div>}
+              {card.examples.length > 0 && (
+                <ul className="grammar-examples">{card.examples.map((ex, i) => <li key={i}>{ex}</li>)}</ul>
+              )}
+            </>) : (
+              <div style={{color:'#475569',fontSize:'0.85rem',marginTop:12}}>Click or press Space to reveal</div>
             )}
           </div>
-          <div style={{textAlign:'center',marginTop:16}}>
-            <button className="continue-btn" onClick={nextGrammarCard}>
-              {currentIdx + 1 >= sessionCards.length ? 'Done' : 'Next'} &rarr;
-            </button>
-            <div className="keyboard-hint"><kbd>Space</kbd> or <kbd>Enter</kbd></div>
-          </div>
+          {flipped ? (<>
+            <div className="rating-btns">
+              <button className="rating-btn again" onClick={() => handleGrammarRating(0)}><kbd style={{marginRight:4,opacity:.7}}>1</kbd> Again</button>
+              <button className="rating-btn hard" onClick={() => handleGrammarRating(1)}><kbd style={{marginRight:4,opacity:.7}}>2</kbd> Hard</button>
+              <button className="rating-btn good" onClick={() => handleGrammarRating(2)}><kbd style={{marginRight:4,opacity:.7}}>3</kbd> Good</button>
+              <button className="rating-btn easy" onClick={() => handleGrammarRating(3)}><kbd style={{marginRight:4,opacity:.7}}>4</kbd> Easy</button>
+            </div>
+            <div className="keyboard-hint">Rate with <kbd>1</kbd>-<kbd>4</kbd></div>
+          </>) : (
+            <div className="keyboard-hint"><kbd>Space</kbd> or <kbd>Enter</kbd> to reveal</div>
+          )}
         </>);
       })()}
 
