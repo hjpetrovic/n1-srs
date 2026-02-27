@@ -717,6 +717,7 @@ function App() {
         <button className={`nav-btn ${view === 'grammar' ? 'active' : ''}`} onClick={startGrammar}>Grammar ({grammarReviewDue.length})</button>
         <button className={`nav-btn ${view === 'quiz' && sessionCards[0]?.type === 'grammar_mcq' ? 'active' : ''}`} onClick={startGrammarMcq}>Grammar MCQ ({grammarMcqReviewDue.length})</button>
       </div>
+      <p style={{fontSize:'0.75rem',color:'#475569',marginTop:-12,marginBottom:8}}>(N) = cards due for review today. Zero means no reviews pending — new cards are studied automatically.</p>
 
       {view === 'dashboard' && (<>
         <div className="dashboard">
