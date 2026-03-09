@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sm2, parseSentence } from './srs.js';
+import { sm2, parseSentence, shuffleOptions } from './srs.js';
 
 // ─── SM-2 Algorithm ────────────────────────────────────────────────────────
 
@@ -119,6 +119,47 @@ describe('sm2 - nextReview', () => {
 });
 
 // ─── parseSentence ─────────────────────────────────────────────────────────
+
+// ─── shuffleOptions ─────────────────────────────────────────────────────────
+
+describe('shuffleOptions - output structure', () => {
+  const opts = ['ア', 'イ', 'ウ', 'エ'];
+
+  it('returns the same number of options', () => {
+    const result = shuffleOptions(opts, 0);
+    expect(result.options).toHaveLength(opts.length);
+  });
+
+  it('contains all the original options', () => {
+    const result = shuffleOptions(opts, 0);
+    expect(result.options.sort()).toEqual([...opts].sort());
+  });
+
+  it('correctIdx points to the original correct text', () => {
+    for (let correctIdx = 0; correctIdx < opts.length; correctIdx++) {
+      const result = shuffleOptions(opts, correctIdx);
+      expect(result.options[result.correctIdx]).toBe(opts[correctIdx]);
+    }
+  });
+
+  it('correctIdx is within valid range', () => {
+    const result = shuffleOptions(opts, 2);
+    expect(result.correctIdx).toBeGreaterThanOrEqual(0);
+    expect(result.correctIdx).toBeLessThan(opts.length);
+  });
+});
+
+describe('shuffleOptions - randomisation', () => {
+  it('produces different orderings across many runs', () => {
+    const opts = ['ア', 'イ', 'ウ', 'エ'];
+    const orders = new Set();
+    for (let i = 0; i < 100; i++) {
+      orders.add(shuffleOptions(opts, 0).options.join(','));
+    }
+    // With 4 options there are 24 permutations; 100 runs should hit more than 1
+    expect(orders.size).toBeGreaterThan(1);
+  });
+});
 
 describe('parseSentence - target word highlight', () => {
   it('identifies a target word in the sentence', () => {

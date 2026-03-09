@@ -20,6 +20,16 @@ export function sm2(card, quality) {
   return { ef, interval, repetitions, nextReview: now + interval * 86400000, lastReviewed: now, lastQuality: quality };
 }
 
+// Shuffle the answer options for a card, returning the reordered options and
+// the new index of the correct answer within the shuffled array.
+export function shuffleOptions(options, correctIdx) {
+  const indices = options.map((_, i) => i).sort(() => Math.random() - 0.5);
+  return {
+    options: indices.map(i => options[i]),
+    correctIdx: indices.indexOf(correctIdx),
+  };
+}
+
 // Parse a sentence into its display parts.
 // Returns { type: 'target' | 'blank' | 'plain', ... }
 export function parseSentence(sentence, target) {

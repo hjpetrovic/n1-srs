@@ -325,7 +325,7 @@ function useDataStore(user) {
 const TYPE_LABELS = { kanji_reading: '漢字読み', vocabulary: '語彙', synonym: '類義語', usage: '用法', grammar: '文法', mixed: '総合' };
 
 // Render sentence with highlighted target word or blank
-function SentenceDisplay({ sentence, target, selected, card }) {
+function SentenceDisplay({ sentence, target, selected, card, isCorrect }) {
   if (target && sentence.includes(target)) {
     const parts = sentence.split(target);
     return (
@@ -346,7 +346,7 @@ function SentenceDisplay({ sentence, target, selected, card }) {
       let blankClass = 'blank-slot';
       if (selected !== null && card) {
         blankContent = card.options[card.correct];
-        blankClass += selected === card.correct ? ' filled' : ' filled wrong';
+        blankClass += isCorrect ? ' filled' : ' filled wrong';
       }
 
       return (
@@ -421,6 +421,7 @@ function App() {
   const [activeTypes, setActiveTypes] = useState(new Set(['kanji_reading', 'vocabulary', 'mixed']));
   const [lastReviewSnapshot, setLastReviewSnapshot] = useState(null);
   const [requeuedIds, setRequeuedIds] = useState(new Set());
+  const [shuffledOptions, setShuffledOptions] = useState({ options: [], correctIdx: 0 });
 
   // Check auth state on mount
   useEffect(() => {
@@ -532,6 +533,18 @@ function App() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [view, selected, currentIdx, sessionCards, flipped]);
 
+  // Shuffle answer options each time a new quiz card is shown
+  useEffect(() => {
+    if (view === 'quiz' && sessionCards[currentIdx]) {
+      const card = sessionCards[currentIdx];
+      const shuffled = [...card.options.map((_, i) => i)].sort(() => Math.random() - 0.5);
+      setShuffledOptions({
+        options: shuffled.map(i => card.options[i]),
+        correctIdx: shuffled.indexOf(card.correct)
+      });
+    }
+  }, [currentIdx, sessionCards, view]);
+
   function buildSessionPool(reviews, newC) {
     // Always clear overdue reviews first; fill remaining slots with new cards
     const reviewSlice = reviews.slice(0, batchSize);
@@ -552,7 +565,7 @@ function App() {
     if (selected !== null) return;
     setSelected(idx);
     const card = sessionCards[currentIdx];
-    const isCorrect = idx === card.correct;
+    const isCorrect = idx === shuffledOptions.correctIdx;
     const key = `q_${card.id}`;
     setLastReviewSnapshot({ key, prevProgress: progress[key], prevStats: stats, prevSessionStats: sessionStats });
     const updated = sm2(progress[key] || {}, isCorrect ? 2 : 0);
@@ -800,13 +813,13 @@ function App() {
           </div>
           <div className="progress-bar"><div className="progress-fill pink" style={{width:`${(currentIdx/sessionCards.length)*100}%`}}></div></div>
           <div className="card">
-            <SentenceDisplay sentence={card.sentence} target={card.target} selected={selected} card={card} />
+            <SentenceDisplay sentence={card.sentence} target={card.target} selected={selected} card={card} isCorrect={selected !== null && selected === shuffledOptions.correctIdx} />
             <div className="options">
-              {card.options.map((opt, i) => {
+              {shuffledOptions.options.map((opt, i) => {
                 let cls = 'option-btn';
                 if (selected !== null) {
-                  if (i === card.correct) cls += ' correct';
-                  else if (i === selected && i !== card.correct) cls += ' wrong';
+                  if (i === shuffledOptions.correctIdx) cls += ' correct';
+                  else if (i === selected && i !== shuffledOptions.correctIdx) cls += ' wrong';
                 }
                 return (
                   <button key={i} className={cls} onClick={() => handleAnswer(i)} disabled={selected !== null}>
