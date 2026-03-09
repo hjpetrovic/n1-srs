@@ -66,6 +66,10 @@
   .option-btn.wrong { border-color: #f87171; background: #450a0a; }
   .option-btn.wrong .key { background: #dc2626; color: white; }
   .option-btn:disabled { cursor: default; }
+  .jisho-hint { margin-top: 12px; padding: 10px 14px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; font-size: 0.9rem; text-align: left; }
+  .jisho-hint .definition { color: #94a3b8; margin-bottom: 6px; }
+  .jisho-hint a { color: #818cf8; text-decoration: none; font-size: 0.82rem; }
+  .jisho-hint a:hover { text-decoration: underline; }
 
   .flashcard { background: #1e293b; border-radius: 16px; padding: 48px 32px; border: 1px solid #334155; text-align: center; cursor: pointer; transition: all 0.3s; min-height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
   .flashcard:hover { border-color: #818cf8; }
@@ -422,6 +426,7 @@ function App() {
   const [lastReviewSnapshot, setLastReviewSnapshot] = useState(null);
   const [requeuedIds, setRequeuedIds] = useState(new Set());
   const [shuffledOptions, setShuffledOptions] = useState({ options: [], correctIdx: 0 });
+  const [jishoMeaning, setJishoMeaning] = useState(null); // null=idle, 'loading', ''=no result, or definition string
 
   // Check auth state on mount
   useEffect(() => {
@@ -545,6 +550,24 @@ function App() {
     }
   }, [currentIdx, sessionCards, view]);
 
+  // Fetch Jisho definition when a kanji/vocab answer is wrong
+  useEffect(() => {
+    if (selected === null || view !== 'quiz') return;
+    const card = sessionCards[currentIdx];
+    if (!card || selected === shuffledOptions.correctIdx) return;
+    if (card.type !== 'kanji_reading' && card.type !== 'vocabulary') return;
+    const word = card.type === 'kanji_reading' ? card.target : card.options[card.correct];
+    if (!word) return;
+    setJishoMeaning('loading');
+    fetch(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(word)}`)
+      .then(r => r.json())
+      .then(data => {
+        const defs = data?.data?.[0]?.senses?.[0]?.english_definitions;
+        setJishoMeaning(defs?.length ? defs.join('; ') : '');
+      })
+      .catch(() => setJishoMeaning(''));
+  }, [selected]);
+
   function buildSessionPool(reviews, newC) {
     // Always clear overdue reviews first; fill remaining slots with new cards
     const reviewSlice = reviews.slice(0, batchSize);
@@ -584,6 +607,7 @@ function App() {
 
   function nextCard() {
     setLastReviewSnapshot(null);
+    setJishoMeaning(null);
     if (currentIdx + 1 >= sessionCards.length) setView('session_complete');
     else { setCurrentIdx(i => i + 1); setSelected(null); }
   }
@@ -828,6 +852,16 @@ function App() {
                 );
               })}
             </div>
+            {selected !== null && selected !== shuffledOptions.correctIdx &&
+              (card.type === 'kanji_reading' || card.type === 'vocabulary') && (
+              <div className="jisho-hint">
+                {jishoMeaning === 'loading' && <div className="definition" style={{color:'#64748b'}}>Looking up…</div>}
+                {jishoMeaning && jishoMeaning !== 'loading' && <div className="definition">{jishoMeaning}</div>}
+                <a href={`https://jisho.org/search/${encodeURIComponent(card.type === 'kanji_reading' ? card.target : card.options[card.correct])}`} target="_blank" rel="noopener noreferrer">
+                  Look up on Jisho →
+                </a>
+              </div>
+            )}
           </div>
           {selected !== null && (
             <div style={{textAlign:'center'}}>
