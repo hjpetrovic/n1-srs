@@ -538,9 +538,11 @@ function App() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [view, selected, currentIdx, sessionCards, flipped]);
 
-  // Shuffle answer options each time a new quiz card is shown
+  // Shuffle answer options each time a new quiz card is shown.
+  // Guard on selected === null so that re-queuing a wrong card (which updates
+  // sessionCards) does not trigger a re-shuffle while an answer is displayed.
   useEffect(() => {
-    if (view === 'quiz' && sessionCards[currentIdx]) {
+    if (view === 'quiz' && sessionCards[currentIdx] && selected === null) {
       const card = sessionCards[currentIdx];
       const shuffled = [...card.options.map((_, i) => i)].sort(() => Math.random() - 0.5);
       setShuffledOptions({
@@ -548,7 +550,7 @@ function App() {
         correctIdx: shuffled.indexOf(card.correct)
       });
     }
-  }, [currentIdx, sessionCards, view]);
+  }, [currentIdx, sessionCards, view, selected]);
 
   // Fetch Jisho definition when a kanji/vocab answer is wrong
   useEffect(() => {
