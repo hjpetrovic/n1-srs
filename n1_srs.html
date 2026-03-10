@@ -224,7 +224,7 @@ function sm2(card, quality) {
 
 function useDataStore(user) {
   const [progress, setProgress] = useState({});
-  const [stats, setStats] = useState({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} });
+  const [stats, setStats] = useState({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {}, recentAnswers: [] });
   const [loaded, setLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const saveTimer = useRef(null);
@@ -245,9 +245,9 @@ function useDataStore(user) {
         else setProgress({});
         if (sSnap.exists) {
           const s = sSnap.data();
-          setStats({ totalReviews: s.totalReviews || 0, streak: s.streak || 0, lastStudyDate: s.lastStudyDate || null, correctCount: s.correctCount || 0, byType: s.byType || {} });
+          setStats({ totalReviews: s.totalReviews || 0, streak: s.streak || 0, lastStudyDate: s.lastStudyDate || null, correctCount: s.correctCount || 0, byType: s.byType || {}, recentAnswers: s.recentAnswers || [] });
         } else {
-          setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} });
+          setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {}, recentAnswers: [] });
         }
         setLoaded(true);
         // Update profile
@@ -265,8 +265,8 @@ function useDataStore(user) {
       try { setProgress(JSON.parse(localStorage.getItem('n1_srs_v2') || '{}')); } catch { setProgress({}); }
       try {
         const s = JSON.parse(localStorage.getItem('n1_stats_v2') || '{}');
-        setStats({ totalReviews: s.totalReviews || 0, streak: s.streak || 0, lastStudyDate: s.lastStudyDate || null, correctCount: s.correctCount || 0 });
-      } catch { setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} }); }
+        setStats({ totalReviews: s.totalReviews || 0, streak: s.streak || 0, lastStudyDate: s.lastStudyDate || null, correctCount: s.correctCount || 0, byType: s.byType || {}, recentAnswers: s.recentAnswers || [] });
+      } catch { setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {}, recentAnswers: [] }); }
       setLoaded(true);
     }
   }, [user]);
@@ -312,7 +312,7 @@ function useDataStore(user) {
 
   function resetAll() {
     setProgress({});
-    setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {} });
+    setStats({ totalReviews: 0, streak: 0, lastStudyDate: null, correctCount: 0, byType: {}, recentAnswers: [] });
     if (user && db) {
       const uid = user.uid;
       db.collection('users').doc(uid).collection('data').doc('progress').delete();
@@ -520,6 +520,8 @@ function App() {
   const newGrammarMcq = useMemo(() => grammarMcqQuestions.filter(q => !progress[`q_${q.id}`]), [progress, grammarMcqQuestions]);
 
   const accuracy = stats.totalReviews > 0 ? Math.round(stats.correctCount / stats.totalReviews * 100) : 0;
+  const recentAnswers = stats.recentAnswers || [];
+  const recentAccuracy = recentAnswers.length > 0 ? Math.round(recentAnswers.reduce((a, b) => a + b, 0) / recentAnswers.length * 100) : null;
 
   // Update streak
   useEffect(() => {
@@ -611,6 +613,7 @@ function App() {
     updateProgress(np);
     let ns = { ...stats, totalReviews: stats.totalReviews + 1, correctCount: stats.correctCount + (isCorrect ? 1 : 0) };
     ns = addTypeStats(ns, card.type, isCorrect);
+    ns = addRecentAnswer(ns, isCorrect);
     updateStats(ns);
     setSessionStats(s => ({ correct: s.correct + (isCorrect ? 1 : 0), total: s.total + 1 }));
     // Re-queue failed cards once at end of session so they're consolidated before tomorrow
@@ -645,6 +648,7 @@ function App() {
     const isCorrect = q >= 2;
     let ns = { ...stats, totalReviews: stats.totalReviews + 1, correctCount: stats.correctCount + (isCorrect ? 1 : 0) };
     ns = addTypeStats(ns, 'vocab', isCorrect);
+    ns = addRecentAnswer(ns, isCorrect);
     updateStats(ns);
     setSessionStats(s => ({ correct: s.correct + (isCorrect ? 1 : 0), total: s.total + 1 }));
     if (currentIdx + 1 >= sessionCards.length) setView('session_complete');
@@ -676,6 +680,7 @@ function App() {
     const isCorrect = q >= 2;
     let ns = { ...stats, totalReviews: stats.totalReviews + 1, correctCount: stats.correctCount + (isCorrect ? 1 : 0) };
     ns = addTypeStats(ns, 'grammar_pattern', isCorrect);
+    ns = addRecentAnswer(ns, isCorrect);
     updateStats(ns);
     setSessionStats(s => ({ correct: s.correct + (isCorrect ? 1 : 0), total: s.total + 1 }));
     if (currentIdx + 1 >= sessionCards.length) setView('session_complete');
@@ -691,6 +696,11 @@ function App() {
   function addTypeStats(ns, type, isCorrect) {
     const prev = (ns.byType || {})[type] || { reviews: 0, correct: 0 };
     return { ...ns, byType: { ...(ns.byType || {}), [type]: { reviews: prev.reviews + 1, correct: prev.correct + (isCorrect ? 1 : 0) } } };
+  }
+
+  function addRecentAnswer(ns, isCorrect) {
+    const updated = [...(ns.recentAnswers || []), isCorrect ? 1 : 0].slice(-100);
+    return { ...ns, recentAnswers: updated };
   }
 
   function undoReview() {
@@ -778,7 +788,7 @@ function App() {
           <div className="stat-card"><h3>Studied</h3><div className="num num-green">{studiedCount}</div><div className="sub">of {questions.length}</div>
             <div className="progress-bar"><div className="progress-fill green" style={{width:`${(studiedCount/questions.length)*100}%`}}></div></div>
           </div>
-          <div className="stat-card"><h3>Accuracy</h3><div className="num num-amber">{accuracy}%</div><div className="sub">{stats.totalReviews} reviews</div></div>
+          <div className="stat-card"><h3>Accuracy</h3><div className="num num-amber">{accuracy}%</div><div className="sub">{stats.totalReviews} reviews all-time</div>{recentAccuracy !== null && <div className="sub" style={{marginTop:4}}>{recentAccuracy}% last {recentAnswers.length} answers</div>}</div>
         </div>
 
         <div className="card">
