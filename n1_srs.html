@@ -428,9 +428,16 @@ function App() {
   const [shuffledOptions, setShuffledOptions] = useState({ options: [], correctIdx: 0 });
   const [jishoMeaning, setJishoMeaning] = useState(null); // null=idle, 'loading', ''=no result, or definition string
 
-  // Check auth state on mount
+  // true when running inside the Android WebView wrapper
+  const isAndroidApp = navigator.userAgent.includes('N1SRS-Android');
+
+  // Check auth state on mount; also complete any pending signInWithRedirect
+  // (the Android app uses redirect instead of popup to avoid Google's WebView block)
   useEffect(() => {
     if (auth) {
+      if (isAndroidApp) {
+        auth.getRedirectResult().catch(err => console.error('Redirect result:', err));
+      }
       const unsub = auth.onAuthStateChanged(u => {
         if (u) setUser(u);
         setAuthChecked(true);
@@ -452,6 +459,12 @@ function App() {
   function handleGoogleLogin() {
     if (!auth) return;
     const provider = new firebase.auth.GoogleAuthProvider();
+    // Android WebView can't handle OAuth popups (Google blocks them);
+    // use redirect instead — getRedirectResult() above completes the flow on return.
+    if (isAndroidApp) {
+      auth.signInWithRedirect(provider);
+      return;
+    }
     auth.signInWithPopup(provider).then(result => {
       setUser(result.user);
     }).catch(err => {

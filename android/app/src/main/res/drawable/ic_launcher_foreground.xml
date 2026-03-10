@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stacked flashcard design, 108×108 viewport (safe zone: 18–90 on each axis).
+  The stacked card suggests spaced repetition; colours match the app's palette.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Back card (offset right+down, deep purple) -->
+    <path
+        android:fillColor="#4338CA"
+        android:pathData="M42,29 L75,29 Q82,29 82,36 L82,80 Q82,87 75,87 L42,87 Q35,87 35,80 L35,36 Q35,29 42,29 Z" />
+
+    <!-- Front card body (near-white) -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M35,22 L68,22 Q75,22 75,29 L75,73 Q75,80 68,80 L35,80 Q28,80 28,73 L28,29 Q28,22 35,22 Z" />
+
+    <!-- Front card header strip (soft purple), rounded at top only -->
+    <path
+        android:fillColor="#818CF8"
+        android:pathData="M35,22 L68,22 Q75,22 75,29 L75,41 L28,41 L28,29 Q28,22 35,22 Z" />
+
+    <!-- Pink accent circle in header -->
+    <path
+        android:fillColor="#F472B6"
+        android:pathData="M47.5,31.5 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+
+    <!-- Content line 1 (dark indigo, full width) -->
+    <path
+        android:fillColor="#312E81"
+        android:pathData="M36,51 L66,51 Q68,51 68,53.5 Q68,56 66,56 L36,56 Q34,56 34,53.5 Q34,51 36,51 Z" />
+
+    <!-- Content line 2 (medium indigo, shorter) -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M36,62 L58,62 Q60,62 60,64.5 Q60,67 58,67 L36,67 Q34,67 34,64.5 Q34,62 36,62 Z" />
+
+    <!-- Content line 3 (lavender, shortest) -->
+    <path
+        android:fillColor="#A5B4FC"
+        android:pathData="M36,73 L50,73 Q52,73 52,75 Q52,77 50,77 L36,77 Q34,77 34,75 Q34,73 36,73 Z" />
+
+</vector>

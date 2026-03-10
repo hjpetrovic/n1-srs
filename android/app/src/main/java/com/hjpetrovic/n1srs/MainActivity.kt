@@ -19,9 +19,11 @@ class MainActivity : AppCompatActivity() {
     private val appUrl = "https://hjpetrovic.github.io/n1-srs/"
 
     // Mimic Chrome Mobile so Google OAuth does not block the WebView user agent.
+    // N1SRS-Android token lets the web app detect it's running inside this wrapper
+    // and switch from signInWithPopup to signInWithRedirect automatically.
     private val chromeUA =
         "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 N1SRS-Android/1.0"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
