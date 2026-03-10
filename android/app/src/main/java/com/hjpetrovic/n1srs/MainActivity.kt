@@ -16,7 +16,7 @@ class MainActivity : AppCompatActivity() {
     // The live GitHub Pages URL — always up to date, Google login + Firebase sync works here.
     // After the first online load the service worker caches the app, so subsequent launches
     // work offline automatically within the same HTTPS origin.
-    private val appUrl = "https://hjpetrovic.github.io/n1-srs/"
+    private val appUrl = "https://hjpetrovic.github.io/n1-srs/n1_srs.html"
 
     // Mimic Chrome Mobile so Google OAuth does not block the WebView user agent.
     // N1SRS-Android token lets the web app detect it's running inside this wrapper
