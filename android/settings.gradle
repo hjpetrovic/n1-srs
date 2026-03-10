@@ -1,0 +1,2 @@
+rootProject.name = "N1 SRS"
+include ':app'
